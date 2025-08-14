@@ -157,3 +157,24 @@ For questions or issues:
 ## License
 
 This project is built for demonstration and educational purposes.
+
+
+## Test
+
+### send-email-notification
+supabase functions serve --no-verify-jwt --env-file .env.local
+
+curl -X POST 'http://localhost:54321/functions/v1/send-email-notification' \
+-H 'Content-Type: application/json' \
+-d '{ "ticketId": "a6fd9fb6-2a65-4a51-90a7-373f861f5d81" }'
+
+curl -X POST http://localhost:54321/functions/v1/smtp-sender \
+  -H "Content-Type: application/json"
+
+
+### sync email
+
+curl http://localhost:54321/functions/v1/imap-reader
+
+curl -X POST http://localhost:54321/functions/v1/email-sync \
+  -H "Content-Type: application/json"

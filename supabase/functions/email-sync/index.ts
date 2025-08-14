@@ -1,3 +1,6 @@
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { ImapClient } from 'jsr:@workingdevshero/deno-imap';
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -82,7 +85,7 @@ Deno.serve(async (req: Request) => {
             }
           }
 
-          // Mark email as read (implementation depends on email provider)
+          // Mark email as read
           await markEmailAsRead(email.id);
         } catch (error) {
           console.error('Error processing email:', email.id, error);
@@ -151,27 +154,216 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// Mock function - replace with actual email provider integration
+// Function to extract plain text from email body
+function extractPlainTextFromBody(messageBody: string): string {
+  try {
+    // Handle multipart messages
+    if (messageBody.includes('Content-Type: text/plain')) {
+      const parts = messageBody.split(/--\w+/);
+      for (const part of parts) {
+        if (part.includes('Content-Type: text/plain')) {
+          const lines = part.split('\r\n');
+          let foundContentType = false;
+          let textContent = '';
+          
+          for (const line of lines) {
+            if (foundContentType && line.trim() && !line.startsWith('Content-')) {
+              textContent += line + '\n';
+            } else if (line.includes('Content-Type: text/plain')) {
+              foundContentType = true;
+            }
+          }
+          
+          if (textContent.trim()) {
+            return textContent.trim();
+          }
+        }
+      }
+    }
+    
+    // If no plain text part found, try to extract from HTML or return raw
+    if (messageBody.includes('<div') && messageBody.includes('</div>')) {
+      const htmlMatch = messageBody.match(/<div[^>]*>(.*?)<\/div>/s);
+      if (htmlMatch) {
+        return htmlMatch[1].replace(/<[^>]*>/g, '').trim();
+      }
+    }
+    
+    // Fallback: return cleaned message body
+    return messageBody
+      .replace(/--\w+/g, '')
+      .replace(/Content-Type:.*?\n/g, '')
+      .replace(/Content-Transfer-Encoding:.*?\n/g, '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\n+/g, '\n')
+      .trim();
+  } catch (error) {
+    console.error('Error extracting plain text:', error);
+    return messageBody;
+  }
+}
+
+// IMAP implementation to fetch unread emails with [TICKET] in subject
 async function fetchUnreadTicketEmails(): Promise<EmailMessage[]> {
-  // This is a mock implementation
-  // Replace with actual email provider API calls (Gmail, Outlook, etc.)
+  let client: ImapClient | null = null;
   
-  // For demonstration, return empty array
-  // In real implementation, you would:
-  // 1. Connect to email provider API (Gmail, Outlook, etc.)
-  // 2. Search for unread emails with [TICKET] in subject
-  // 3. Return array of EmailMessage objects
-  
-  console.log('Mock: Fetching unread emails with [TICKET] in subject');
-  return [];
+  try {
+    // Validate environment variables
+    const requiredEnvVars = ['IMAP_HOST', 'IMAP_PORT', 'IMAP_USER', 'IMAP_PASS'];
+    for (const envVar of requiredEnvVars) {
+      if (!Deno.env.get(envVar)) {
+        throw new Error(`Missing required environment variable: ${envVar}`);
+      }
+    }
+
+    // Create IMAP client
+    client = new ImapClient({
+      host: Deno.env.get('IMAP_HOST')!,
+      port: parseInt(Deno.env.get('IMAP_PORT')!),
+      tls: Deno.env.get('IMAP_USE_TLS') !== 'false',
+      username: Deno.env.get('IMAP_USER')!,
+      password: Deno.env.get('IMAP_PASS')!,
+    });
+
+    console.log('Connecting to IMAP server...');
+    
+    // Connect and authenticate
+    await client.connect();
+    await client.authenticate();
+    
+    console.log('Connected and authenticated successfully');
+
+    // Select inbox
+    const inbox = await client.selectMailbox('INBOX');
+    console.log(`INBOX has ${inbox.exists} messages`);
+
+    if (!inbox.exists || inbox.exists === 0) {
+      return [];
+    }
+
+    // Search for unread messages with "[TICKET]" in subject
+    console.log('Searching for unread messages with [TICKET] in subject...');
+    
+    // Search for both unread AND containing [TICKET] in subject
+    const ticketMessages = await client.search({
+      subject: '[TICKET]',
+      unseen: true  // Only unread messages
+    });
+
+    console.log(`Found ${ticketMessages.length} unread messages with [TICKET] in subject`);
+
+    if (ticketMessages.length === 0) {
+      return [];
+    }
+
+    // Fetch detailed information for ticket messages
+    const emailMessages: EmailMessage[] = [];
+    
+    for (const messageId of ticketMessages) {
+      try {
+        const messages = await client.fetch(`${messageId}`, {
+          envelope: true,
+          headers: ['Subject', 'From', 'To', 'Date', 'Message-ID'],
+          flags: true,
+        });
+
+        for (const message of messages) {
+          // Skip if message is already read (double-check)
+          if (message.flags?.includes('\\Seen')) {
+            continue;
+          }
+
+          const fromEmail = message.envelope?.from?.[0] 
+            ? `${message.envelope.from[0].mailbox}@${message.envelope.from[0].host}`
+            : 'Unknown';
+
+          // Fetch full message body
+          const rawMessage = await client.fetch(
+            message.seq.toString(),
+            { full: true, markSeen: false }
+          );
+          
+          const rawBody = new TextDecoder().decode(rawMessage[0].parts.TEXT.data);
+          const cleanBody = extractPlainTextFromBody(rawBody);
+
+          emailMessages.push({
+            id: message.seq.toString(),
+            messageId: message.envelope?.messageId || `seq-${message.seq}`,
+            subject: message.envelope?.subject || 'No Subject',
+            from: fromEmail,
+            body: cleanBody,
+          });
+        }
+      } catch (fetchError) {
+        console.error(`Error fetching message ${messageId}:`, fetchError);
+        // Continue with other messages even if one fails
+      }
+    }
+
+    console.log(`Successfully retrieved ${emailMessages.length} unread ticket messages`);
+    return emailMessages;
+
+  } catch (error) {
+    console.error('Error fetching emails via IMAP:', error);
+    throw new Error(`IMAP fetch failed: ${error.message}`);
+  } finally {
+    // Always disconnect from IMAP server
+    if (client) {
+      try {
+        await client.disconnect();
+        console.log('Disconnected from IMAP server');
+      } catch (disconnectError) {
+        console.error('Error disconnecting from IMAP:', disconnectError);
+      }
+    }
+  }
 }
 
-// Mock function - replace with actual email provider integration
+// IMAP implementation to mark email as read
 async function markEmailAsRead(emailId: string): Promise<void> {
-  // Mock implementation
-  // Replace with actual email provider API call to mark email as read
-  console.log(`Mock: Marking email ${emailId} as read`);
-}
+  let client: ImapClient | null = null;
+  
+  try {
+    // Validate environment variables
+    const requiredEnvVars = ['IMAP_HOST', 'IMAP_PORT', 'IMAP_USER', 'IMAP_PASS'];
+    for (const envVar of requiredEnvVars) {
+      if (!Deno.env.get(envVar)) {
+        throw new Error(`Missing required environment variable: ${envVar}`);
+      }
+    }
 
-// Import createClient after the functions are defined
-import { createClient } from 'npm:@supabase/supabase-js@2';
+    // Create IMAP client
+    client = new ImapClient({
+      host: Deno.env.get('IMAP_HOST')!,
+      port: parseInt(Deno.env.get('IMAP_PORT')!),
+      tls: Deno.env.get('IMAP_USE_TLS') !== 'false',
+      username: Deno.env.get('IMAP_USER')!,
+      password: Deno.env.get('IMAP_PASS')!,
+    });
+
+    // Connect and authenticate
+    await client.connect();
+    await client.authenticate();
+    
+    // Select inbox
+    await client.selectMailbox('INBOX');
+
+    // Mark the specific message as read using sequence number
+    await client.store(emailId, { flags: ['\\Seen'] }, 'add');
+    
+    console.log(`Successfully marked email ${emailId} as read`);
+
+  } catch (error) {
+    console.error(`Error marking email ${emailId} as read:`, error);
+    // Don't throw error here to avoid breaking the main flow
+  } finally {
+    // Always disconnect from IMAP server
+    if (client) {
+      try {
+        await client.disconnect();
+      } catch (disconnectError) {
+        console.error('Error disconnecting from IMAP:', disconnectError);
+      }
+    }
+  }
+}

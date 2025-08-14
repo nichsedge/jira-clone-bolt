@@ -1,3 +1,6 @@
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import nodemailer from 'npm:nodemailer@6.9.10';
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -7,6 +10,16 @@ const corsHeaders = {
 interface TicketNotificationRequest {
   ticketId: string;
 }
+
+const transport = nodemailer.createTransport({
+  host: Deno.env.get('SMTP_HOST')!,
+  port: Number(Deno.env.get('SMTP_PORT') || '587'),
+  secure: Deno.env.get('SMTP_PORT') === '465',
+  auth: {
+    user: Deno.env.get('SMTP_USER')!,
+    pass: Deno.env.get('SMTP_PASS')!
+  }
+});
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -40,7 +53,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Only send notification if ticket status is DONE
-    if (ticket.status !== 'DONE') {
+    if (ticket.status.toUpperCase() !== 'DONE') {
       return new Response(
         JSON.stringify({
           success: false,
@@ -93,15 +106,14 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// Mock function - replace with actual email sending service
 async function sendEmailNotification(ticket: any): Promise<boolean> {
-  // This is a mock implementation
-  // Replace with actual email sending service (SendGrid, Nodemailer, etc.)
-  
-  const emailContent = {
-    to: ticket.email,
-    subject: `[TICKET] ${ticket.title} - Completed`,
-    body: `
+  try {
+    await new Promise<void>((resolve, reject) => {
+      transport.sendMail({
+        from: Deno.env.get('SMTP_USER')!,
+        to: ticket.email,
+        subject: `[TICKET] ${ticket.title} - Completed`,
+        text: `
 Hello,
 
 Your support ticket has been completed:
@@ -116,20 +128,19 @@ Thank you for contacting our support team.
 
 Best regards,
 Support Team
-    `.trim(),
-  };
+        `.trim(),
+      }, (error) => {
+        if (error) {
+          return reject(error);
+        }
+        resolve();
+      });
+    });
 
-  console.log('Mock: Sending email notification:', emailContent);
-
-  // In real implementation, you would:
-  // 1. Use an email service like SendGrid, AWS SES, or Nodemailer
-  // 2. Format the email with proper HTML template
-  // 3. Handle email delivery errors
-  // 4. Return true/false based on delivery success
-
-  // For demonstration, always return true
-  return true;
+    console.log(`✅ Email sent successfully for Ticket ${ticket.id}!`);
+    return true;
+  } catch (error) {
+    console.error('Failed to send email:', error);
+    return false;
+  }
 }
-
-// Import createClient after the functions are defined
-import { createClient } from 'npm:@supabase/supabase-js@2';
