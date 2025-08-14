@@ -1,5 +1,4 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import nodemailer from 'npm:nodemailer@6.9.10';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,30 +10,14 @@ interface TicketNotificationRequest {
   ticketId: string;
 }
 
-const transport = nodemailer.createTransport({
-  host: Deno.env.get('SMTP_HOST')!,
-  port: Number(Deno.env.get('SMTP_PORT') || '587'),
-  secure: Deno.env.get('SMTP_PORT') === '465',
-  auth: {
-    user: Deno.env.get('SMTP_USER')!,
-    pass: Deno.env.get('SMTP_PASS')!
-  }
-});
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
     const { ticketId }: TicketNotificationRequest = await req.json();
-
-    if (!ticketId) {
-      throw new Error('Ticket ID is required');
-    }
+    if (!ticketId) throw new Error('Ticket ID is required');
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -59,33 +42,20 @@ Deno.serve(async (req: Request) => {
           success: false,
           message: 'Email notification only sent for DONE tickets',
         }),
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders,
-          },
-        }
+        { headers: { 'Content-Type': 'application/json', ...corsHeaders } }
       );
     }
 
-    // Send email notification
-    const emailSent = await sendEmailNotification(ticket);
-
-    if (!emailSent) {
-      throw new Error('Failed to send email notification');
-    }
+    // Send email via API
+    const sent = await sendEmailNotification(ticket);
+    if (!sent) throw new Error('Failed to send email notification');
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Email notification sent to ${ticket.email}`,
+        message: `Email notification sent to ${extractEmailAddress(ticket.email)}`,
       }),
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders,
-        },
-      }
+      { headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     );
 
   } catch (error) {
@@ -95,25 +65,28 @@ Deno.serve(async (req: Request) => {
         error: error.message || 'Failed to send email notification',
         success: false,
       }),
-      {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders,
-        },
-      }
+      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     );
   }
 });
 
+function extractEmailAddress(raw: string): string {
+  const match = raw.match(/<(.+?)>/);
+  if (match) return match[1];
+  return raw.trim();
+}
+
 async function sendEmailNotification(ticket: any): Promise<boolean> {
   try {
-    await new Promise<void>((resolve, reject) => {
-      transport.sendMail({
-        from: Deno.env.get('SMTP_USER')!,
-        to: ticket.email,
-        subject: `[TICKET] ${ticket.title} - Completed`,
-        text: `
+    const baseUrl = Deno.env.get('EMAIL_API_URL');
+    if (!baseUrl) throw new Error("EMAIL_API_URL environment variable is not set");
+
+    const receiverEmail = extractEmailAddress(ticket.email);
+
+    const params = new URLSearchParams({
+      receiver_email: receiverEmail,
+      subject: `[TICKET] ${ticket.title} - Completed`,
+      body: `
 Hello,
 
 Your support ticket has been completed:
@@ -128,19 +101,18 @@ Thank you for contacting our support team.
 
 Best regards,
 Support Team
-        `.trim(),
-      }, (error) => {
-        if (error) {
-          return reject(error);
-        }
-        resolve();
-      });
+      `.trim()
     });
 
-    console.log(`✅ Email sent successfully for Ticket ${ticket.id}!`);
-    return true;
-  } catch (error) {
-    console.error('Failed to send email:', error);
+    const resp = await fetch(`${baseUrl}/send?${params.toString()}`, { method: 'POST' });
+    if (!resp.ok) throw new Error(`Email API error: ${resp.statusText}`);
+
+    const result = await resp.json();
+    console.log(`✅ Email API response:`, result);
+
+    return result.status === 'success';
+  } catch (err) {
+    console.error('Failed to send email via API:', err);
     return false;
   }
 }
