@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { X, Mail, Calendar, History, Save, Trash2 } from 'lucide-react';
 import type { Ticket, UpdateTicketData, TicketHistory } from '../types/ticket';
 import { TicketService } from '../services/ticketService';
+import { useNotification } from '../hooks/useNotification';
 
 interface TicketModalProps {
   ticket: Ticket;
@@ -24,6 +25,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({
   const [history, setHistory] = useState<TicketHistory[]>([]);
   const [loading, setLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const { showSuccess, showError } = useNotification();
 
   useEffect(() => {
     if (isOpen) {
@@ -53,9 +55,24 @@ export const TicketModal: React.FC<TicketModalProps> = ({
       onUpdate(updatedTicket);
       setEditMode(false);
       await loadHistory();
+      
+      if (formData.status === 'DONE') {
+        showSuccess(
+          'Ticket Updated',
+          `Ticket "${updatedTicket.title}" has been marked as done and email notification is being sent.`
+        );
+      } else {
+        showSuccess(
+          'Ticket Updated',
+          `Ticket "${updatedTicket.title}" has been updated successfully.`
+        );
+      }
     } catch (error) {
       console.error('Failed to update ticket:', error);
-      alert('Failed to update ticket. Please try again.');
+      showError(
+        'Update Failed',
+        'Failed to update ticket. Please try again.'
+      );
     } finally {
       setLoading(false);
     }

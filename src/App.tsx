@@ -4,6 +4,7 @@ import { TicketCard } from './components/TicketCard';
 import { TicketModal } from './components/TicketModal';
 import { CreateTicketModal } from './components/CreateTicketModal';
 import { EmailSyncSection } from './components/EmailSyncSection';
+import { NotificationProvider } from './components/NotificationManager';
 import { TicketService } from './services/ticketService';
 import type { Ticket as TicketType } from './types/ticket';
 
@@ -271,4 +272,12 @@ function App() {
   );
 }
 
-export default App;
+function AppWithProviders() {
+  return (
+    <NotificationProvider>
+      <App />
+    </NotificationProvider>
+  );
+}
+
+export default AppWithProviders;

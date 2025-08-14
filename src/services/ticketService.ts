@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { useNotification } from '../hooks/useNotification';
 import type { Ticket, CreateTicketData, UpdateTicketData, TicketHistory, EmailSyncLog } from '../types/ticket';
 
 export class TicketService {
@@ -65,7 +66,7 @@ export class TicketService {
 
     // If status changed to DONE, trigger email notification
     if (updates.status === 'DONE') {
-      await this.triggerEmailNotification(data);
+      this.triggerEmailNotification(data);
     }
 
     return data;
@@ -122,19 +123,24 @@ export class TicketService {
   }
 
   // Private method to trigger email notification
-  private static async triggerEmailNotification(ticket: Ticket): Promise<void> {
-    try {
-      await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-email-notification`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ticketId: ticket.id }),
+  private static triggerEmailNotification(ticket: Ticket): void {
+    // Send email in background without blocking UI
+    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-email-notification`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ticketId: ticket.id }),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const error = await response.text();
+          console.error('Email notification failed:', error);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to send email notification:', error);
       });
-    } catch (error) {
-      console.error('Failed to send email notification:', error);
-      // Don't throw here to avoid blocking ticket updates
-    }
   }
 }

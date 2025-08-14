@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Plus } from 'lucide-react';
 import type { CreateTicketData } from '../types/ticket';
 import { TicketService } from '../services/ticketService';
+import { useNotification } from '../hooks/useNotification';
 
 interface CreateTicketModalProps {
   isOpen: boolean;
@@ -22,17 +23,18 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
     status: 'OPEN',
   });
   const [loading, setLoading] = useState(false);
+  const { showSuccess, showError } = useNotification();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim() || !formData.email.trim()) {
-      alert('Please fill in all required fields');
+      showError('Validation Error', 'Please fill in all required fields');
       return;
     }
 
     setLoading(true);
     try {
-      await TicketService.createTicket(formData);
+      const newTicket = await TicketService.createTicket(formData);
       onTicketCreated();
       onClose();
       setFormData({
@@ -42,9 +44,17 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
         priority: 'MEDIUM',
         status: 'OPEN',
       });
+      
+      showSuccess(
+        'Ticket Created',
+        `Ticket "${newTicket.title}" has been created successfully.`
+      );
     } catch (error) {
       console.error('Failed to create ticket:', error);
-      alert('Failed to create ticket. Please try again.');
+      showError(
+        'Creation Failed',
+        'Failed to create ticket. Please try again.'
+      );
     } finally {
       setLoading(false);
     }

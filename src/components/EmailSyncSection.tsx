@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { RefreshCw, Mail, Activity, CheckCircle, XCircle, Clock } from 'lucide-react';
 import type { EmailSyncLog } from '../types/ticket';
 import { TicketService } from '../services/ticketService';
+import { useNotification } from '../hooks/useNotification';
 
 export interface EmailSyncSectionProps {
   onTicketRefresh?: () => void;
@@ -11,6 +12,7 @@ export interface EmailSyncSectionProps {
 export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefresh }) => {
   const [syncing, setSyncing] = useState(false);
   const [logs, setLogs] = useState<EmailSyncLog[]>([]);
+  const { showSuccess, showError, showLoading } = useNotification();
 
   useEffect(() => {
     loadSyncLogs();
@@ -28,6 +30,8 @@ export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefr
   const handleEmailSync = async () => {
     setSyncing(true);
     try {
+      showLoading('Syncing Email', 'Fetching new emails from your inbox...', 0);
+      
       await TicketService.triggerEmailSync();
       // Refresh logs after a short delay to allow the sync to start
       setTimeout(() => {
@@ -37,10 +41,18 @@ export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefr
           onTicketRefresh();
         }
         setSyncing(false);
+        
+        showSuccess(
+          'Email Sync Completed',
+          'New emails have been synced and tickets created successfully.'
+        );
       }, 2000);
     } catch (error) {
       console.error('Email sync failed:', error);
-      alert('Email sync failed. Please check your email configuration and try again.');
+      showError(
+        'Email Sync Failed',
+        'Failed to sync emails. Please check your email configuration and try again.'
+      );
       setSyncing(false);
     }
   };
