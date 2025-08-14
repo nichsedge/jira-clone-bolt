@@ -172,7 +172,7 @@ function App() {
 
         {/* Email Sync Section */}
         <div className="mb-8">
-          <EmailSyncSection />
+          <EmailSyncSection onTicketRefresh={loadTickets} />
         </div>
 
         {/* Filters */}

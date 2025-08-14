@@ -4,7 +4,11 @@ import { RefreshCw, Mail, Activity, CheckCircle, XCircle, Clock } from 'lucide-r
 import type { EmailSyncLog } from '../types/ticket';
 import { TicketService } from '../services/ticketService';
 
-export const EmailSyncSection: React.FC = () => {
+export interface EmailSyncSectionProps {
+  onTicketRefresh?: () => void;
+}
+
+export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefresh }) => {
   const [syncing, setSyncing] = useState(false);
   const [logs, setLogs] = useState<EmailSyncLog[]>([]);
 
@@ -28,6 +32,10 @@ export const EmailSyncSection: React.FC = () => {
       // Refresh logs after a short delay to allow the sync to start
       setTimeout(() => {
         loadSyncLogs();
+        // Call the ticket refresh callback if provided
+        if (onTicketRefresh) {
+          onTicketRefresh();
+        }
         setSyncing(false);
       }, 2000);
     } catch (error) {
