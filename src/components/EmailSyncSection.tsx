@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { format } from 'date-fns';
-import { RefreshCw, Mail, Activity, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { RefreshCw, Mail, History } from 'lucide-react';
 import type { EmailSyncLog } from '../types/ticket';
 import { TicketService } from '../services/ticketService';
 import { useNotification } from '../hooks/useNotification';
+import { EmailSyncHistoryModal } from './EmailSyncHistoryModal';
 
 export interface EmailSyncSectionProps {
   onTicketRefresh?: () => void;
@@ -11,21 +11,8 @@ export interface EmailSyncSectionProps {
 
 export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefresh }) => {
   const [syncing, setSyncing] = useState(false);
-  const [logs, setLogs] = useState<EmailSyncLog[]>([]);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const { showSuccess, showError, showLoading, removeNotification } = useNotification();
-
-  useEffect(() => {
-    loadSyncLogs();
-  }, []);
-
-  const loadSyncLogs = async () => {
-    try {
-      const syncLogs = await TicketService.getEmailSyncLogs();
-      setLogs(syncLogs);
-    } catch (error) {
-      console.error('Failed to load sync logs:', error);
-    }
-  };
 
   const handleEmailSync = async () => {
     setSyncing(true);
@@ -43,7 +30,6 @@ export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefr
       
       // Refresh logs after a short delay to allow the sync to start
       setTimeout(() => {
-        loadSyncLogs();
         // Call the ticket refresh callback if provided
         if (onTicketRefresh) {
           onTicketRefresh();
@@ -72,21 +58,9 @@ export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefr
     setSyncing(false);
   };
 
-  const getStatusIcon = (status: EmailSyncLog['status']) => {
-    switch (status) {
-      case 'RUNNING':
-        return <Clock className="w-4 h-4 text-yellow-500" />;
-      case 'COMPLETED':
-        return <CheckCircle className="w-4 h-4 text-green-500" />;
-      case 'FAILED':
-        return <XCircle className="w-4 h-4 text-red-500" />;
-      default:
-        return <Activity className="w-4 h-4 text-gray-500" />;
-    }
-  };
-
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+    <>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center">
           <Mail className="w-6 h-6 text-blue-600 mr-3" />
@@ -97,58 +71,37 @@ export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefr
             </p>
           </div>
         </div>
-        <button
-          onClick={handleEmailSync}
-          disabled={syncing}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
-          {syncing ? 'Syncing...' : 'Sync with Email'}
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setShowHistoryModal(true)}
+            className="flex items-center px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <History className="w-4 h-4 mr-2" />
+            View History
+          </button>
+          <button
+            onClick={handleEmailSync}
+            disabled={syncing}
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing...' : 'Sync with Email'}
+          </button>
+        </div>
       </div>
 
-      {logs.length > 0 && (
-        <div>
-          <h3 className="text-md font-medium text-gray-900 mb-4">Recent Sync History</h3>
-          <div className="space-y-3">
-            {logs.map((log) => (
-              <div key={log.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center space-x-3">
-                  {getStatusIcon(log.status)}
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">
-                      {log.status === 'RUNNING' ? 'Sync in progress...' :
-                       log.status === 'COMPLETED' ? 'Sync completed' :
-                       'Sync failed'}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {format(new Date(log.sync_started_at), 'MMM d, yyyy HH:mm')}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-6 text-sm text-gray-600">
-                  <div className="text-center">
-                    <div className="font-medium">{log.emails_processed}</div>
-                    <div className="text-xs">Emails</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="font-medium">{log.tickets_created}</div>
-                    <div className="text-xs">Tickets</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {logs.length === 0 && (
         <div className="text-center py-8 text-gray-500">
           <Mail className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-          <p>No email sync history yet</p>
-          <p className="text-sm">Click "Sync with Email" to start</p>
+          <p className="text-lg font-medium text-gray-900 mb-2">Email Sync Ready</p>
+          <p className="text-sm">Click "Sync with Email" to fetch unread emails with [TICKET] in subject</p>
+          <p className="text-xs text-gray-400 mt-2">View sync history to see past operations</p>
         </div>
-      )}
-    </div>
+      </div>
+
+      <EmailSyncHistoryModal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+      />
+    </>
   );
 };
