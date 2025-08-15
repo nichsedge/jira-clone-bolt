@@ -12,7 +12,7 @@ export interface EmailSyncSectionProps {
 export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefresh }) => {
   const [syncing, setSyncing] = useState(false);
   const [logs, setLogs] = useState<EmailSyncLog[]>([]);
-  const { showSuccess, showError, showLoading } = useNotification();
+  const { showSuccess, showError, showLoading, removeNotification } = useNotification();
 
   useEffect(() => {
     loadSyncLogs();
@@ -29,10 +29,18 @@ export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefr
 
   const handleEmailSync = async () => {
     setSyncing(true);
+    let loadingNotificationId: string | null = null;
+    
     try {
-      showLoading('Syncing Email', 'Fetching new emails from your inbox...', 0);
+      loadingNotificationId = showLoading('Syncing Email', 'Fetching new emails from your inbox...', 0);
       
       await TicketService.triggerEmailSync();
+      
+      // Remove loading notification
+      if (loadingNotificationId) {
+        removeNotification(loadingNotificationId);
+      }
+      
       // Refresh logs after a short delay to allow the sync to start
       setTimeout(() => {
         loadSyncLogs();
@@ -40,7 +48,6 @@ export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefr
         if (onTicketRefresh) {
           onTicketRefresh();
         }
-        setSyncing(false);
         
       }, 2000);
       
@@ -50,12 +57,19 @@ export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefr
       );
     } catch (error) {
       console.error('Email sync failed:', error);
+      
+      // Remove loading notification on error
+      if (loadingNotificationId) {
+        removeNotification(loadingNotificationId);
+      }
+      
       showError(
         'Email Sync Failed',
         'Failed to sync emails. Please check your email configuration and try again.'
       );
       setSyncing(false);
     }
+    setSyncing(false);
   };
 
   const getStatusIcon = (status: EmailSyncLog['status']) => {
