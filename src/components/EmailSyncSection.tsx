@@ -42,11 +42,12 @@ export const EmailSyncSection: React.FC<EmailSyncSectionProps> = ({ onTicketRefr
         }
         setSyncing(false);
         
-        showSuccess(
-          'Email Sync Completed',
-          'New emails have been synced and tickets created successfully.'
-        );
       }, 2000);
+      
+      showSuccess(
+        'Email Sync Completed',
+        'New emails have been synced and tickets created successfully.'
+      );
     } catch (error) {
       console.error('Email sync failed:', error);
       showError(
